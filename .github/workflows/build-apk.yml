@@ -3,23 +3,29 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Kodlari Cek
+        uses: actions/checkout@v4
+
       - name: JDK 17 Kur
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Standart Kamera Android Projesini Olustur
+      - name: Profesyonel Kamera Android Projesini Olustur
         run: |
           mkdir -p app/src/main/java/com/sakkamera/app app/src/main/res/layout app/src/main/res/drawable
           cat << 'EOF' > settings.gradle.kts
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-          rootProject.name = "SakKamera"
+          rootProject.name = "ProKamera"
           include(":app")
           EOF
 
@@ -41,7 +47,7 @@ jobs:
           android {
               namespace = "com.sakkamera.app"
               compileSdk = 34
-              defaultConfig { applicationId = "com.sakkamera.app"; minSdk = 24; targetSdk = 34; versionCode = 1; versionName = "1.0" }
+              defaultConfig { applicationId = "com.sakkamera.app"; minSdk = 24; targetSdk = 34; versionCode = 2; versionName = "2.0" }
               compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
               kotlinOptions { jvmTarget = "17" }
           }
@@ -54,6 +60,7 @@ jobs:
               implementation("androidx.camera:camera-camera2:$cx")
               implementation("androidx.camera:camera-lifecycle:$cx")
               implementation("androidx.camera:camera-view:$cx")
+              implementation("androidx.exifinterface:exifinterface:1.3.7")
               implementation("androidx.work:work-runtime-ktx:2.9.0")
               implementation("com.google.android.gms:play-services-location:21.3.0")
           }
@@ -64,12 +71,12 @@ jobs:
           <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
               <item>
                   <shape android:shape="oval">
-                      <stroke android:width="4dp" android:color="#FFFFFF"/>
+                      <stroke android:width="3.5dp" android:color="#FFFFFF"/>
                       <solid android:color="#00000000"/>
-                      <size android:width="80dp" android:height="80dp"/>
+                      <size android:width="78dp" android:height="78dp"/>
                   </shape>
               </item>
-              <item android:top="8dp" android:bottom="8dp" android:left="8dp" android:right="8dp">
+              <item android:top="7dp" android:bottom="7dp" android:left="7dp" android:right="7dp">
                   <shape android:shape="oval">
                       <solid android:color="#FFFFFF"/>
                   </shape>
@@ -80,8 +87,26 @@ jobs:
           cat << 'EOF' > app/src/main/res/drawable/bg_circle_btn.xml
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-              <solid android:color="#33FFFFFF"/>
-              <stroke android:width="1dp" android:color="#4DFFFFFF"/>
+              <solid android:color="#40000000"/>
+              <stroke android:width="1dp" android:color="#33FFFFFF"/>
+          </shape>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/drawable/bg_pill.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#55000000"/>
+              <corners android:radius="20dp"/>
+              <stroke android:width="1dp" android:color="#33FFFFFF"/>
+          </shape>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/drawable/bg_focus_ring.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+              <solid android:color="#00000000"/>
+              <stroke android:width="2dp" android:color="#FACC15"/>
+              <size android:width="64dp" android:height="64dp"/>
           </shape>
           EOF
 
@@ -92,7 +117,7 @@ jobs:
               <uses-permission android:name="android.permission.CAMERA" />
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
               <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-              <application android:allowBackup="true" android:label="Kamera" android:supportsRtl="true" android:theme="@style/Theme.Material3.Dark.NoActionBar">
+              <application android:allowBackup="true" android:label="ProKamera" android:supportsRtl="true" android:theme="@style/Theme.Material3.Dark.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="portrait">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -106,74 +131,136 @@ jobs:
           cat << 'EOF' > app/src/main/res/layout/activity_main.xml
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/rootContainer"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
               android:background="#000000">
 
+              <!-- Tam Ekran Kamera Vizoru -->
               <androidx.camera.view.PreviewView
                   android:id="@+id/viewFinder"
                   android:layout_width="match_parent"
                   android:layout_height="match_parent" />
 
+              <!-- Dokunarak Odaklama Halkasi -->
               <View
-                  android:id="@+id/flashOverlay"
-                  android:layout_width="match_parent"
-                  android:layout_height="match_parent"
-                  android:background="#FFFFFF"
+                  android:id="@+id/focusRing"
+                  android:layout_width="64dp"
+                  android:layout_height="64dp"
+                  android:background="@drawable/bg_focus_ring"
                   android:visibility="gone" />
 
-              <!-- Ust Minimal Kamera Cubugu -->
+              <!-- Kamera Acilirken Siyaha Dusmeyi Onleyen Hazirlik Gostergesi -->
+              <TextView
+                  android:id="@+id/tvCameraWarmup"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_gravity="center"
+                  android:background="@drawable/bg_pill"
+                  android:paddingHorizontal="16dp"
+                  android:paddingVertical="8dp"
+                  android:text="Lens hazırlanıyor..."
+                  android:textColor="#CCFFFFFF"
+                  android:textSize="12sp" />
+
+              <!-- Ust Profesyonel Kamera Kontrolleri -->
               <LinearLayout
                   android:layout_width="match_parent"
                   android:layout_height="wrap_content"
                   android:layout_gravity="top"
-                  android:background="#66000000"
+                  android:background="#55000000"
                   android:gravity="center_vertical"
                   android:orientation="horizontal"
-                  android:paddingHorizontal="20dp"
-                  android:paddingVertical="14dp">
+                  android:paddingHorizontal="16dp"
+                  android:paddingVertical="12dp">
 
+                  <!-- Donanim Flas Modu (Kapali / Oto / Acik) -->
+                  <TextView
+                      android:id="@+id/btnFlashMode"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:background="@drawable/bg_pill"
+                      android:paddingHorizontal="12dp"
+                      android:paddingVertical="6dp"
+                      android:text="⚡ Kapalı"
+                      android:textColor="#FFFFFF"
+                      android:textSize="12sp" />
+
+                  <Space
+                      android:layout_width="0dp"
+                      android:layout_height="1dp"
+                      android:layout_weight="1" />
+
+                  <!-- Konum Etiketi & Klasor Durumu -->
                   <TextView
                       android:id="@+id/tvFolderStatus"
-                      android:layout_width="0dp"
+                      android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
-                      android:layout_weight="1"
-                      android:text="● Hedef Klasör"
-                      android:textColor="#FFFFFF"
-                      android:textSize="13sp" />
+                      android:background="@drawable/bg_pill"
+                      android:paddingHorizontal="12dp"
+                      android:paddingVertical="6dp"
+                      android:text="📍 Hedef Konum • Gün Sonu Sil"
+                      android:textColor="#34D399"
+                      android:textSize="12sp"
+                      android:textStyle="bold" />
 
+                  <Space
+                      android:layout_width="0dp"
+                      android:layout_height="1dp"
+                      android:layout_weight="1" />
+
+                  <!-- Ayarlar (Konum Etiketi, Klasor, Gun Sonu Silme Tercihi) -->
                   <TextView
                       android:id="@+id/btnSetLocation"
                       android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
-                      android:background="@drawable/bg_circle_btn"
+                      android:background="@drawable/bg_pill"
                       android:paddingHorizontal="12dp"
                       android:paddingVertical="6dp"
-                      android:text="Konumu Kaydet"
+                      android:text="⚙ Ayarlar"
                       android:textColor="#FFFFFF"
                       android:textSize="12sp" />
               </LinearLayout>
 
-              <!-- Alt Standart Kamera Kontrol Bari -->
+              <!-- Alt Profesyonel Kamera Bari -->
               <LinearLayout
                   android:layout_width="match_parent"
                   android:layout_height="wrap_content"
                   android:layout_gravity="bottom"
-                  android:background="#B3000000"
+                  android:background="#AA000000"
                   android:gravity="center"
                   android:orientation="vertical"
                   android:paddingTop="12dp"
                   android:paddingBottom="28dp">
 
-                  <TextView
+                  <!-- Optik / Dijital Zoom Seciciler (1x / 2x) -->
+                  <LinearLayout
                       android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
-                      android:layout_marginBottom="16dp"
-                      android:letterSpacing="0.1"
-                      android:text="FOTOĞRAF"
-                      android:textColor="#FACC15"
-                      android:textSize="12sp"
-                      android:textStyle="bold" />
+                      android:layout_marginBottom="14dp"
+                      android:background="@drawable/bg_pill"
+                      android:orientation="horizontal"
+                      android:padding="3dp">
+
+                      <TextView
+                          android:id="@+id/btnZoom1x"
+                          android:layout_width="36dp"
+                          android:layout_height="28dp"
+                          android:gravity="center"
+                          android:text="1x"
+                          android:textColor="#FACC15"
+                          android:textSize="12sp"
+                          android:textStyle="bold" />
+
+                      <TextView
+                          android:id="@+id/btnZoom2x"
+                          android:layout_width="36dp"
+                          android:layout_height="28dp"
+                          android:gravity="center"
+                          android:text="2x"
+                          android:textColor="#AAFFFFFF"
+                          android:textSize="12sp" />
+                  </LinearLayout>
 
                   <LinearLayout
                       android:layout_width="match_parent"
@@ -182,25 +269,26 @@ jobs:
                       android:orientation="horizontal"
                       android:paddingHorizontal="36dp">
 
-                      <!-- Sol: Kamera / Konum Butonu -->
-                      <ImageButton
-                          android:id="@+id/btnSwitchCam"
+                      <!-- Sol: Galeri / Klasorler Onizlemesi -->
+                      <ImageView
+                          android:id="@+id/btnGallery"
                           android:layout_width="52dp"
                           android:layout_height="52dp"
                           android:background="@drawable/bg_circle_btn"
-                          android:src="@android:drawable/ic_menu_camera"
-                          android:tint="#FFFFFF" />
+                          android:padding="2dp"
+                          android:scaleType="centerCrop"
+                          android:src="@android:drawable/ic_menu_gallery" />
 
                       <Space
                           android:layout_width="0dp"
                           android:layout_height="1dp"
                           android:layout_weight="1" />
 
-                      <!-- Orta: Standart Yuvarlak Deklansor (SHOT) -->
+                      <!-- Orta: Profesyonel Deklansor -->
                       <View
                           android:id="@+id/btnShot"
-                          android:layout_width="80dp"
-                          android:layout_height="80dp"
+                          android:layout_width="78dp"
+                          android:layout_height="78dp"
                           android:background="@drawable/bg_shutter"
                           android:clickable="true"
                           android:focusable="true" />
@@ -210,15 +298,14 @@ jobs:
                           android:layout_height="1dp"
                           android:layout_weight="1" />
 
-                      <!-- Sag: Son Cekilen Fotograf / Galeri Yuvarlak Onizleme -->
-                      <ImageView
-                          android:id="@+id/btnGallery"
+                      <!-- Sag: On / Arka Kamera Cevirme -->
+                      <ImageButton
+                          android:id="@+id/btnSwitchCam"
                           android:layout_width="52dp"
                           android:layout_height="52dp"
                           android:background="@drawable/bg_circle_btn"
-                          android:padding="2dp"
-                          android:scaleType="centerCrop"
-                          android:src="@android:drawable/ic_menu_gallery" />
+                          android:src="@android:drawable/ic_menu_revert"
+                          android:tint="#FFFFFF" />
                   </LinearLayout>
               </LinearLayout>
           </FrameLayout>
@@ -228,19 +315,51 @@ jobs:
           package com.sakkamera.app
           import android.content.Context
           import android.os.Environment
+          import androidx.exifinterface.media.ExifInterface
           import androidx.work.Worker
           import androidx.work.WorkerParameters
           import java.io.File
+
           class EndOfDayCleanupWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
-              override fun doWork(): Result { deleteTargetOnly(applicationContext); return Result.success() }
+              override fun doWork(): Result {
+                  val prefs = applicationContext.getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
+                  if (prefs.getBoolean("eod_delete_enabled", true)) {
+                      deleteTaggedPhotosOnly(applicationContext)
+                  }
+                  return Result.success()
+              }
+
               companion object {
-                  const val TARGET_FOLDER = "Hedef_Konum_Fotolari"
-                  const val NORMAL_FOLDER = "Genel_Galeri"
-                  fun deleteTargetOnly(ctx: Context): Int {
-                      val dir = File(ctx.getExternalFilesDir(Environment.DIRECTORY_PICTURES), TARGET_FOLDER)
-                      var c = 0
-                      dir.listFiles()?.forEach { if (it.isFile && it.delete()) c++ }
-                      return c
+                  fun getTargetFolderName(ctx: Context): String =
+                      ctx.getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
+                          .getString("target_folder", "Hedef_Konum_Fotolari") ?: "Hedef_Konum_Fotolari"
+
+                  fun getNormalFolderName(ctx: Context): String =
+                      ctx.getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
+                          .getString("normal_folder", "Standart_Galeri") ?: "Standart_Galeri"
+
+                  fun getLocationTag(ctx: Context): String =
+                      ctx.getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
+                          .getString("location_tag", "HEDEF_KONUM_SILINECEK") ?: "HEDEF_KONUM_SILINECEK"
+
+                  // Sadece hedef klasordeki ve EXIF konum etiketi eslesen fotograflari siler
+                  fun deleteTaggedPhotosOnly(ctx: Context): Int {
+                      val base = ctx.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return 0
+                      val targetDir = File(base, getTargetFolderName(ctx))
+                      if (!targetDir.exists()) return 0
+                      val expectedTag = getLocationTag(ctx)
+                      var count = 0
+                      targetDir.listFiles()?.forEach { file ->
+                          if (file.isFile && file.extension.lowercase() in listOf("jpg", "jpeg")) {
+                              val tag = try {
+                                  ExifInterface(file).getAttribute(ExifInterface.TAG_USER_COMMENT) ?: ""
+                              } catch (e: Exception) { "" }
+                              if (tag.contains(expectedTag) || tag.isEmpty()) {
+                                  if (file.delete()) count++
+                              }
+                          }
+                      }
+                      return count
                   }
               }
           }
@@ -253,8 +372,11 @@ jobs:
           import android.content.Context
           import android.content.pm.PackageManager
           import android.graphics.BitmapFactory
+          import android.graphics.Color
           import android.location.Location
           import android.os.*
+          import android.view.MotionEvent
+          import android.view.ScaleGestureDetector
           import android.view.View
           import android.widget.*
           import androidx.appcompat.app.AlertDialog
@@ -264,8 +386,10 @@ jobs:
           import androidx.camera.view.PreviewView
           import androidx.core.app.ActivityCompat
           import androidx.core.content.ContextCompat
+          import androidx.exifinterface.media.ExifInterface
           import androidx.work.*
           import com.google.android.gms.location.LocationServices
+          import com.google.android.gms.location.Priority
           import java.io.File
           import java.text.SimpleDateFormat
           import java.util.*
@@ -273,122 +397,420 @@ jobs:
 
           class MainActivity : AppCompatActivity() {
               private lateinit var viewFinder: PreviewView
-              private lateinit var flashOverlay: View
+              private lateinit var focusRing: View
+              private lateinit var tvCameraWarmup: TextView
               private lateinit var tvFolderStatus: TextView
+              private lateinit var btnFlashMode: TextView
               private lateinit var btnGallery: ImageView
+              private lateinit var btnShot: View
+              private lateinit var btnZoom1x: TextView
+              private lateinit var btnZoom2x: TextView
+
+              private var camera: Camera? = null
               private var imageCapture: ImageCapture? = null
               private var lensFacing = CameraSelector.DEFAULT_BACK_CAMERA
-              private var autoDone = false
+              private var flashMode = ImageCapture.FLASH_MODE_OFF
+              private var isCameraStreaming = false
+              private var isCapturing = false
+              private var autoShotDone = false
               private var lastLoc: Location? = null
               private val fused by lazy { LocationServices.getFusedLocationProviderClient(this) }
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   setContentView(R.layout.activity_main)
+
                   viewFinder = findViewById(R.id.viewFinder)
-                  flashOverlay = findViewById(R.id.flashOverlay)
+                  focusRing = findViewById(R.id.focusRing)
+                  tvCameraWarmup = findViewById(R.id.tvCameraWarmup)
                   tvFolderStatus = findViewById(R.id.tvFolderStatus)
+                  btnFlashMode = findViewById(R.id.btnFlashMode)
                   btnGallery = findViewById(R.id.btnGallery)
-                  checkRollover(); scheduleCleanup()
-                  findViewById<View>(R.id.btnShot).setOnClickListener { takePhoto() }
-                  btnGallery.setOnClickListener { showGallery() }
-                  findViewById<View>(R.id.btnSetLocation).setOnClickListener { saveTargetLoc() }
+                  btnShot = findViewById(R.id.btnShot)
+                  btnZoom1x = findViewById(R.id.btnZoom1x)
+                  btnZoom2x = findViewById(R.id.btnZoom2x)
+
+                  checkDayRolloverCleanup()
+                  scheduleEndOfDayCleanup()
+                  setupViewfinderGestures()
+
+                  // Kamera akisi (STREAMING) baslayana kadar fotograf cekimini engelle (Siyaha dusmeyi onler)
+                  viewFinder.previewStreamState.observe(this) { state ->
+                      if (state == PreviewView.StreamState.STREAMING) {
+                          isCameraStreaming = true
+                          tvCameraWarmup.visibility = View.GONE
+                          btnShot.alpha = 1.0f
+                          val prefs = getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
+                          val autoSnapOnOpen = prefs.getBoolean("auto_snap_on_open", true)
+                          if (autoSnapOnOpen && !autoShotDone) {
+                              autoShotDone = true
+                              // Sensorun pozlama (AE/AF) oturmasi icin 650ms bekle, sonra cek
+                              viewFinder.postDelayed({
+                                  if (!isFinishing && !isDestroyed && isCameraStreaming) {
+                                      takePhoto()
+                                  }
+                              }, 650)
+                          }
+                      } else {
+                          isCameraStreaming = false
+                          tvCameraWarmup.visibility = View.VISIBLE
+                          btnShot.alpha = 0.45f
+                      }
+                  }
+
+                  btnShot.setOnClickListener {
+                      if (!isCameraStreaming) {
+                          Toast.makeText(this, "Kamera henüz hazır değil, lütfen bekleyin", Toast.LENGTH_SHORT).show()
+                          return@setOnClickListener
+                      }
+                      btnShot.animate().scaleX(0.88f).scaleY(0.88f).setDuration(70).withEndAction {
+                          btnShot.animate().scaleX(1f).scaleY(1f).setDuration(70).start()
+                      }.start()
+                      takePhoto()
+                  }
+
+                  btnFlashMode.setOnClickListener {
+                      flashMode = when (flashMode) {
+                          ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
+                          ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
+                          else -> ImageCapture.FLASH_MODE_OFF
+                      }
+                      imageCapture?.flashMode = flashMode
+                      btnFlashMode.text = when (flashMode) {
+                          ImageCapture.FLASH_MODE_AUTO -> "⚡ Otomatik"
+                          ImageCapture.FLASH_MODE_ON -> "⚡ Açık"
+                          else -> "⚡ Kapalı"
+                      }
+                  }
+
+                  btnZoom1x.setOnClickListener {
+                      camera?.cameraControl?.setZoomRatio(1.0f)
+                      btnZoom1x.setTextColor(Color.parseColor("#FACC15"))
+                      btnZoom2x.setTextColor(Color.parseColor("#AAFFFFFF"))
+                  }
+
+                  btnZoom2x.setOnClickListener {
+                      camera?.cameraControl?.setZoomRatio(2.0f)
+                      btnZoom2x.setTextColor(Color.parseColor("#FACC15"))
+                      btnZoom1x.setTextColor(Color.parseColor("#AAFFFFFF"))
+                  }
+
+                  btnGallery.setOnClickListener { showVisualGalleryDialog() }
+                  findViewById<View>(R.id.btnSetLocation).setOnClickListener { showSettingsDialog() }
+                  tvFolderStatus.setOnClickListener { showSettingsDialog() }
+
                   findViewById<View>(R.id.btnSwitchCam).setOnClickListener {
-                      lensFacing = if (lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+                      lensFacing = if (lensFacing == CameraSelector.DEFAULT_BACK_CAMERA)
+                          CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
                       startCamera()
                   }
-                  if (permsGranted()) initCam() else ActivityCompat.requestPermissions(this, PERMS, 10)
+
+                  if (permsGranted()) initLocationAndCamera() else ActivityCompat.requestPermissions(this, PERMS, 10)
+              }
+
+              @SuppressLint("ClickableViewAccessibility")
+              private fun setupViewfinderGestures() {
+                  val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                      override fun onScale(detector: ScaleGestureDetector): Boolean {
+                          val currentZoom = camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: 1f
+                          camera?.cameraControl?.setZoomRatio(currentZoom * detector.scaleFactor)
+                          return true
+                      }
+                  })
+
+                  viewFinder.setOnTouchListener { _, event ->
+                      scaleDetector.onTouchEvent(event)
+                      if (event.action == MotionEvent.ACTION_UP && !scaleDetector.isInProgress) {
+                          val factory = viewFinder.meteringPointFactory
+                          val point = factory.createPoint(event.x, event.y)
+                          val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                              .setAutoCancelDuration(3, TimeUnit.SECONDS)
+                              .build()
+                          camera?.cameraControl?.startFocusAndMetering(action)
+
+                          focusRing.x = event.x - focusRing.width / 2f
+                          focusRing.y = event.y - focusRing.height / 2f
+                          focusRing.visibility = View.VISIBLE
+                          focusRing.scaleX = 1.3f
+                          focusRing.scaleY = 1.3f
+                          focusRing.animate().scaleX(1f).scaleY(1f).setDuration(200).withEndAction {
+                              focusRing.postDelayed({ focusRing.visibility = View.GONE }, 1000)
+                          }.start()
+                      }
+                      true
+                  }
               }
 
               @SuppressLint("MissingPermission")
-              private fun initCam() {
-                  fused.lastLocation.addOnSuccessListener { lastLoc = it; updateBanner(); startCamera() }.addOnFailureListener { startCamera() }
+              private fun initLocationAndCamera() {
+                  startCamera()
+                  fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener { loc ->
+                      if (loc != null) {
+                          lastLoc = loc
+                          updateStatusChip()
+                      }
+                  }
               }
 
               private fun startCamera() {
+                  isCameraStreaming = false
+                  tvCameraWarmup.visibility = View.VISIBLE
                   val fut = ProcessCameraProvider.getInstance(this)
                   fut.addListener({
                       val prov = fut.get()
                       val prev = Preview.Builder().build().also { it.setSurfaceProvider(viewFinder.surfaceProvider) }
-                      imageCapture = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
-                      prov.unbindAll()
-                      prov.bindToLifecycle(this, lensFacing, prev, imageCapture)
-                      if (!autoDone) { autoDone = true; Handler(Looper.getMainLooper()).postDelayed({ takePhoto() }, 400) }
+                      imageCapture = ImageCapture.Builder()
+                          .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                          .setFlashMode(flashMode)
+                          .build()
+                      try {
+                          prov.unbindAll()
+                          camera = prov.bindToLifecycle(this, lensFacing, prev, imageCapture)
+                          updateStatusChip()
+                          updateGalleryThumb()
+                      } catch (e: Exception) {
+                          Toast.makeText(this, "Kamera hatası: ${e.message}", Toast.LENGTH_SHORT).show()
+                      }
                   }, ContextCompat.getMainExecutor(this))
               }
 
-              private fun inTarget(): Boolean {
-                  val p = getSharedPreferences("sak", Context.MODE_PRIVATE)
-                  if (!p.contains("lat")) return true
+              private fun isInsideTargetLocation(): Boolean {
+                  val p = getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
+                  if (!p.contains("target_lat")) return true
                   val cur = lastLoc ?: return true
+                  val radius = p.getFloat("target_radius", 150f)
                   val res = FloatArray(1)
-                  Location.distanceBetween(cur.latitude, cur.longitude, p.getFloat("lat", 0f).toDouble(), p.getFloat("lng", 0f).toDouble(), res)
-                  return res[0] <= 150f
+                  Location.distanceBetween(
+                      cur.latitude, cur.longitude,
+                      p.getFloat("target_lat", 0f).toDouble(),
+                      p.getFloat("target_lng", 0f).toDouble(),
+                      res
+                  )
+                  return res[0] <= radius
               }
 
-              private fun activeDir(): File {
-                  val name = if (inTarget()) EndOfDayCleanupWorker.TARGET_FOLDER else EndOfDayCleanupWorker.NORMAL_FOLDER
-                  return File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), name).apply { mkdirs() }
+              private fun getActiveFolderAndTag(): Pair<File, String> {
+                  val inside = isInsideTargetLocation()
+                  val folderName = if (inside) EndOfDayCleanupWorker.getTargetFolderName(this)
+                                   else EndOfDayCleanupWorker.getNormalFolderName(this)
+                  val tag = if (inside) EndOfDayCleanupWorker.getLocationTag(this) else "KALICI_GALERI"
+                  val dir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), folderName).apply { mkdirs() }
+                  return Pair(dir, tag)
               }
 
-              private fun updateBanner() {
-                  tvFolderStatus.text = if (inTarget()) "● Hedef Konum Klasörü" else "● Genel Galeri"
+              private fun updateStatusChip() {
+                  val p = getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
+                  val eodEnabled = p.getBoolean("eod_delete_enabled", true)
+                  val inside = isInsideTargetLocation()
+                  val folderName = if (inside) EndOfDayCleanupWorker.getTargetFolderName(this)
+                                   else EndOfDayCleanupWorker.getNormalFolderName(this)
+                  if (inside) {
+                      tvFolderStatus.text = if (eodEnabled) "📍 $folderName • Gün Sonu Sil" else "📍 $folderName • Kalıcı"
+                      tvFolderStatus.setTextColor(Color.parseColor("#34D399"))
+                  } else {
+                      tvFolderStatus.text = "🗂 $folderName • Kalıcı"
+                      tvFolderStatus.setTextColor(Color.parseColor("#FFFFFF"))
+                  }
               }
 
               private fun takePhoto() {
+                  if (!isCameraStreaming || isCapturing) return
                   val cap = imageCapture ?: return
-                  flashOverlay.visibility = View.VISIBLE
-                  Handler(Looper.getMainLooper()).postDelayed({ flashOverlay.visibility = View.GONE }, 120)
-                  val dir = activeDir()
-                  val f = File(dir, "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.jpg")
-                  cap.takePicture(ImageCapture.OutputFileOptions.Builder(f).build(), ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageSavedCallback {
-                      override fun onError(e: ImageCaptureException) {}
-                      override fun onImageSaved(r: ImageCapture.OutputFileResults) {
-                          updateBanner()
-                          BitmapFactory.decodeFile(f.absolutePath)?.let { btnGallery.setImageBitmap(it) }
+                  isCapturing = true
+
+                  val (dir, locationTag) = getActiveFolderAndTag()
+                  val file = File(dir, "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.jpg")
+
+                  cap.takePicture(
+                      ImageCapture.OutputFileOptions.Builder(file).build(),
+                      ContextCompat.getMainExecutor(this),
+                      object : ImageCapture.OnImageSavedCallback {
+                          override fun onError(e: ImageCaptureException) {
+                              isCapturing = false
+                          }
+
+                          override fun onImageSaved(r: ImageCapture.OutputFileResults) {
+                              isCapturing = false
+                              try {
+                                  val exif = ExifInterface(file)
+                                  exif.setAttribute(ExifInterface.TAG_USER_COMMENT, "FOLDER:${dir.name}|TAG:$locationTag")
+                                  lastLoc?.let { exif.setGpsInfo(it) }
+                                  exif.saveAttributes()
+                              } catch (_: Exception) {}
+                              updateStatusChip()
+                              updateGalleryThumb()
+                          }
                       }
-                  })
+                  )
               }
 
-              @SuppressLint("MissingPermission")
-              private fun saveTargetLoc() {
-                  fused.lastLocation.addOnSuccessListener {
-                      if (it != null) {
-                          lastLoc = it
-                          getSharedPreferences("sak", Context.MODE_PRIVATE).edit().putFloat("lat", it.latitude.toFloat()).putFloat("lng", it.longitude.toFloat()).apply()
-                          updateBanner()
-                          Toast.makeText(this, "Mevcut konum hedef olarak kaydedildi", Toast.LENGTH_SHORT).show()
+              private fun updateGalleryThumb() {
+                  val base = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return
+                  val allFiles = base.walkTopDown().filter { it.isFile && it.extension.lowercase() == "jpg" }
+                      .sortedByDescending { it.lastModified() }.toList()
+                  if (allFiles.isNotEmpty()) {
+                      val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                      BitmapFactory.decodeFile(allFiles.first().absolutePath, opts)?.let {
+                          btnGallery.setImageBitmap(it)
                       }
                   }
               }
 
-              private fun showGallery() {
-                  val b = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-                  val t = File(b, EndOfDayCleanupWorker.TARGET_FOLDER).listFiles()?.size ?: 0
-                  val n = File(b, EndOfDayCleanupWorker.NORMAL_FOLDER).listFiles()?.size ?: 0
-                  AlertDialog.Builder(this).setTitle("Fotoğraflar").setMessage("Hedef Klasör (Gün Sonu Silinir): $t fotoğraf\nGenel Galeri (Kalıcı): $n fotoğraf")
+              @SuppressLint("MissingPermission")
+              private fun showSettingsDialog() {
+                  val prefs = getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
+                  val layout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(50, 30, 50, 10)
+                  }
+
+                  val etTargetFolder = EditText(this).apply {
+                      hint = "Hedef Klasör Adı"
+                      setText(EndOfDayCleanupWorker.getTargetFolderName(this@MainActivity))
+                  }
+                  val etLocationTag = EditText(this).apply {
+                      hint = "Konum Etiketi"
+                      setText(EndOfDayCleanupWorker.getLocationTag(this@MainActivity))
+                  }
+                  val etRadius = EditText(this).apply {
+                      hint = "Hedef Yarıçap (Metre)"
+                      setText(prefs.getFloat("target_radius", 150f).toInt().toString())
+                  }
+                  val swEodDelete = Switch(this).apply {
+                      text = "Gün Sonu (23:59) Bu Klasörü Otomatik Sil"
+                      isChecked = prefs.getBoolean("eod_delete_enabled", true)
+                  }
+                  val swAutoSnap = Switch(this).apply {
+                      text = "Kamera Hazır Olduğunda Otomatik Çek"
+                      isChecked = prefs.getBoolean("auto_snap_on_open", true)
+                  }
+
+                  layout.addView(TextView(this).apply { text = "Hedef Klasör Adı:" })
+                  layout.addView(etTargetFolder)
+                  layout.addView(TextView(this).apply { text = "Konum Etiketi (Silinecek Fotoğraf Etiketi):" })
+                  layout.addView(etLocationTag)
+                  layout.addView(TextView(this).apply { text = "Konum Yarıçapı (Metre):" })
+                  layout.addView(etRadius)
+                  layout.addView(swEodDelete)
+                  layout.addView(swAutoSnap)
+
+                  AlertDialog.Builder(this)
+                      .setTitle("Kamera & Konum Ayarları")
+                      .setView(layout)
+                      .setPositiveButton("Kaydet") { _, _ ->
+                          prefs.edit()
+                              .putString("target_folder", etTargetFolder.text.toString().ifBlank { "Hedef_Konum_Fotolari" })
+                              .putString("location_tag", etLocationTag.text.toString().ifBlank { "HEDEF_KONUM_SILINECEK" })
+                              .putFloat("target_radius", etRadius.text.toString().toFloatOrNull() ?: 150f)
+                              .putBoolean("eod_delete_enabled", swEodDelete.isChecked)
+                              .putBoolean("auto_snap_on_open", swAutoSnap.isChecked)
+                              .apply()
+                          updateStatusChip()
+                      }
+                      .setNeutralButton("📍 Şu Anki Konumu Hedef Yap") { _, _ ->
+                          fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).addOnSuccessListener { loc ->
+                              if (loc != null) {
+                                  lastLoc = loc
+                                  prefs.edit()
+                                      .putFloat("target_lat", loc.latitude.toFloat())
+                                      .putFloat("target_lng", loc.longitude.toFloat())
+                                      .apply()
+                                  updateStatusChip()
+                                  Toast.makeText(this, "Mevcut GPS konumu hedef olarak kaydedildi", Toast.LENGTH_SHORT).show()
+                              }
+                          }
+                      }
+                      .setNegativeButton("İptal", null)
+                      .show()
+              }
+
+              private fun showVisualGalleryDialog() {
+                  val base = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return
+                  val targetFolder = EndOfDayCleanupWorker.getTargetFolderName(this)
+                  val normalFolder = EndOfDayCleanupWorker.getNormalFolderName(this)
+                  val tFiles = File(base, targetFolder).listFiles()?.filter { it.isFile }?.sortedByDescending { it.lastModified() } ?: emptyList()
+                  val nFiles = File(base, normalFolder).listFiles()?.filter { it.isFile }?.sortedByDescending { it.lastModified() } ?: emptyList()
+
+                  val scroll = ScrollView(this)
+                  val container = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(36, 24, 36, 24)
+                  }
+
+                  val header = TextView(this).apply {
+                      text = "📍 $targetFolder (${tFiles.size} foto - Gün Sonu Silinir)\n🗂 $normalFolder (${nFiles.size} foto - Kalıcı)\n"
+                      textSize = 13f
+                  }
+                  container.addView(header)
+
+                  (tFiles + nFiles).take(20).forEach { file ->
+                      val row = LinearLayout(this).apply {
+                          orientation = LinearLayout.HORIZONTAL
+                          setPadding(0, 12, 0, 12)
+                      }
+                      val iv = ImageView(this).apply {
+                          layoutParams = LinearLayout.LayoutParams(160, 160)
+                          scaleType = ImageView.ScaleType.CENTER_CROP
+                          val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                          BitmapFactory.decodeFile(file.absolutePath, opts)?.let { setImageBitmap(it) }
+                      }
+                      val tv = TextView(this).apply {
+                          val isTarget = file.parentFile?.name == targetFolder
+                          val badge = if (isTarget) "📍 [Gün Sonu Silinir]" else "🗂 [Kalıcı]"
+                          text = "  ${file.name}\n  Klasör: ${file.parentFile?.name}\n  $badge"
+                          textSize = 12f
+                      }
+                      row.addView(iv)
+                      row.addView(tv)
+                      container.addView(row)
+                  }
+                  scroll.addView(container)
+
+                  AlertDialog.Builder(this)
+                      .setTitle("Çekilen Fotoğraflar ve Klasörler")
+                      .setView(scroll)
                       .setPositiveButton("Kapat", null)
-                      .setNeutralButton("Gün Sonu Silmeyi Test Et") { _, _ ->
-                          val d = EndOfDayCleanupWorker.deleteTargetOnly(this)
-                          Toast.makeText(this, "$d fotoğraf silindi", Toast.LENGTH_SHORT).show()
-                      }.show()
+                      .setNeutralButton("Etiketli Hedef Klasörü Şimdi Temizle") { _, _ ->
+                          val del = EndOfDayCleanupWorker.deleteTaggedPhotosOnly(this)
+                          updateGalleryThumb()
+                          Toast.makeText(this, "$del etiketli fotoğraf silindi (Kalıcı klasör korundu)", Toast.LENGTH_SHORT).show()
+                      }
+                      .show()
               }
 
-              private fun checkRollover() {
-                  val p = getSharedPreferences("sak", Context.MODE_PRIVATE)
+              private fun checkDayRolloverCleanup() {
+                  val p = getSharedPreferences("pro_cam_prefs", Context.MODE_PRIVATE)
                   val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-                  if (p.getString("day", today) != today) EndOfDayCleanupWorker.deleteTargetOnly(this)
-                  p.edit().putString("day", today).apply()
+                  if (p.getString("last_day", today) != today && p.getBoolean("eod_delete_enabled", true)) {
+                      EndOfDayCleanupWorker.deleteTaggedPhotosOnly(this)
+                  }
+                  p.edit().putString("last_day", today).apply()
               }
 
-              private fun scheduleCleanup() {
-                  val req = PeriodicWorkRequestBuilder<EndOfDayCleanupWorker>(24, TimeUnit.HOURS).build()
-                  WorkManager.getInstance(this).enqueueUniquePeriodicWork("eod", ExistingPeriodicWorkPolicy.KEEP, req)
+              private fun scheduleEndOfDayCleanup() {
+                  val now = Calendar.getInstance()
+                  val target = Calendar.getInstance().apply {
+                      set(Calendar.HOUR_OF_DAY, 23)
+                      set(Calendar.MINUTE, 59)
+                      set(Calendar.SECOND, 0)
+                      if (before(now)) add(Calendar.DAY_OF_YEAR, 1)
+                  }
+                  val delay = target.timeInMillis - now.timeInMillis
+                  val req = PeriodicWorkRequestBuilder<EndOfDayCleanupWorker>(24, TimeUnit.HOURS)
+                      .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+                      .build()
+                  WorkManager.getInstance(this).enqueueUniquePeriodicWork("eod_pro_cam", ExistingPeriodicWorkPolicy.UPDATE, req)
               }
 
               private fun permsGranted() = PERMS.all { ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED }
-              override fun onRequestPermissionsResult(c: Int, p: Array<String>, g: IntArray) { super.onRequestPermissionsResult(c, p, g); if (permsGranted()) initCam() }
-              companion object { val PERMS = arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION) }
+              override fun onRequestPermissionsResult(c: Int, p: Array<String>, g: IntArray) {
+                  super.onRequestPermissionsResult(c, p, g)
+                  if (permsGranted()) initLocationAndCamera()
+              }
+
+              companion object {
+                  val PERMS = arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+              }
           }
           EOF
 
@@ -398,8 +820,15 @@ jobs:
           gradle-version: '8.7'
       - run: gradle assembleDebug --no-daemon
 
-      - name: APK Yukle
+      - name: APK Artifact Yukle
         uses: actions/upload-artifact@v4
         with:
           name: SakKamera-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Dogrudan Indirilebilir APK Release Olustur
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk ProKamera.apk
+          gh release create "v2.0.${{ github.run_number }}" ProKamera.apk --title "ProKamera v2.0.${{ github.run_number }} (Doğrudan İndirilebilir APK)" --notes "Aşağıdaki ProKamera.apk dosyasına dokunarak ZIP açmadan doğrudan telefonunuza indirip kurabilirsiniz." || true
